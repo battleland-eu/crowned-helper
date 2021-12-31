@@ -1,0 +1,5 @@
+name: CrownedHelper
+version: '${project.version}'
+main: xyz.rgnt.crownedhelper.Plugin
+api-version: 1.17
+website: rgntxyz
