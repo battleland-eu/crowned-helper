@@ -74,22 +74,30 @@ public class CommandQueueManager
                     var command = userBranch.peek();
                     if (command == null)
                         return;
-                    if (TimeStatics.deltaIsLargerThan(command.getTimestamp(), command.getExecutionDelay())) {
+
+                    if (TimeStatics.deltaIsLargerThan(command.getTimestamp(),
+                            command.getExecutionDelay())) {
+
                         // cancel if world is blocked
-                        if(Stream.of(command.getBlockedWorlds())
-                                .noneMatch((world) -> player.getWorld().getName().equals(world)))
-                            return;
-                        // cancel if world is not allowed
-                        if(Stream.of(command.getBlockedWorlds()).anyMatch((world) -> player.getWorld().getName().equals(world)))
-                            return;
+                        if (command.getBlockedWorlds().length > 0)
+                            if (Stream.of(command.getBlockedWorlds())
+                                    .anyMatch((world) -> player.getWorld().getName().equals(world)))
+                                return;
+                        // cancel if world isnt allowed
+                        if (command.getAllowedWorlds().length > 0)
+                            if (Stream.of(command.getAllowedWorlds())
+                                    .noneMatch((world) -> player.getWorld().getName().equals(world)))
+                                return;
+
                         userBranch.poll();
 
+                        // execute command
                         Bukkit.getScheduler().runTask(plugin, () -> {
                             if (command.getExecutionSide().equals(QueuedCommand.ExecSide.CLIENT))
-                            player.performCommand(command.getCommand());
+                                player.performCommand(command.getCommand());
                             else
                                 Bukkit.dispatchCommand(Bukkit.getConsoleSender(), command.getCommand());
-                            log.debug("Executing {} command '{}' for '{}'",
+                            log.info("Executing {} command '{}' for '{}'",
                                     command.getExecutionSide().name().toLowerCase(),
                                     command.getCommand(),
                                     player.getName());
@@ -110,7 +118,7 @@ public class CommandQueueManager
     public void handlePlayerQuit(PlayerQuitEvent event) {
         final var player = event.getPlayer();
         final var data = this.queueBranches.remove(player.getUniqueId());
-        if(data == null || data.size() == 0)
+        if (data == null || data.size() == 0)
             return;
         final var cargo = player.getPersistentDataContainer();
         final var json = new JsonArray();
@@ -131,7 +139,7 @@ public class CommandQueueManager
         final var cargo = player.getPersistentDataContainer();
 
         String jsonRaw = cargo.get(dataKey, PersistentDataType.STRING);
-        if(jsonRaw == null)
+        if (jsonRaw == null)
             return;
         try {
             JsonArray json = new JsonParser().parse(jsonRaw).getAsJsonArray();
@@ -277,20 +285,23 @@ public class CommandQueueManager
                                 .withSuggestionsProvider((ctx, label) -> Bukkit.getWorlds().stream().map(World::getName).collect(Collectors.toList()))))
                 .handler(ctx -> {
                     final Player target = ctx.get("target");
-
                     // params
                     final String command = ctx.get("command");
                     final Integer delay = ctx.get("delay");
-
 
                     // flags
                     final boolean newBranch = ctx.flags().contains("new-branch");
                     final QueuedCommand.ExecSide runAs
                             = ctx.flags().getValue("side", QueuedCommand.ExecSide.CLIENT);
+
+                    final var allowedWorldsString = ctx.flags().getValue("allowed-worlds", "");
                     final String[] allowedWorlds
-                            = ctx.flags().getValue("allowed-worlds", "").split(",");
+                            = allowedWorldsString.length() > 0 ? allowedWorldsString.split(",") : new String[0];
+
+                    final var blockedWorldsString = ctx.flags().getValue("blocked-worlds", "");
                     final String[] blockedWorlds
-                            = ctx.flags().getValue("blocked-worlds", "").split(",");
+                            = blockedWorldsString.length() > 0 ? blockedWorldsString.split(",") : new String[0];
+
 
                     final var qc = new QueuedCommand(TimeStatics.getCurrentUnix(), command, delay, runAs, allowedWorlds, blockedWorlds);
                     enqueueCommand(target, qc, newBranch);
