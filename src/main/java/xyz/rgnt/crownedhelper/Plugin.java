@@ -5,7 +5,10 @@ import cloud.commandframework.execution.AsynchronousCommandExecutionCoordinator;
 import cloud.commandframework.paper.PaperCommandManager;
 import lombok.Getter;
 import lombok.extern.log4j.Log4j2;
+import org.bukkit.Bukkit;
 import org.bukkit.command.CommandSender;
+import org.bukkit.permissions.Permission;
+import org.bukkit.permissions.PermissionDefault;
 import org.bukkit.plugin.java.JavaPlugin;
 import xyz.rgnt.crownedhelper.helpers.commandqueue.CommandQueueManager;
 
@@ -45,6 +48,15 @@ public final class Plugin
                 this.commandManager.registerAsynchronousCompletions();
         } catch (Exception e) {
             e.printStackTrace();
+        }
+        {
+            Permission commandPermission = new Permission("crownedhelper.command.crownedhelper", PermissionDefault.OP);
+            Bukkit.getPluginManager().addPermission(commandPermission);
+
+            final var builder = commandManager.commandBuilder("crownedhelper", "ch")
+                    .permission(commandPermission.getName());
+
+
         }
 
         this.commandQueue.initialize();

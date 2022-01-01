@@ -32,6 +32,10 @@ public class QueuedCommand {
         this.blockedWorlds = blockedWorlds;
     }
 
+    public long getScheduledExecution() {
+       return getTimestamp() + getExecutionDelay();
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;

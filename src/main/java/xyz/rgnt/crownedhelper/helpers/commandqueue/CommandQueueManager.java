@@ -4,21 +4,19 @@ import cloud.commandframework.ArgumentDescription;
 import cloud.commandframework.arguments.standard.EnumArgument;
 import cloud.commandframework.arguments.standard.IntegerArgument;
 import cloud.commandframework.arguments.standard.StringArgument;
-import cloud.commandframework.arguments.standard.StringArrayArgument;
 import cloud.commandframework.bukkit.parsers.PlayerArgument;
-import cloud.commandframework.captions.Caption;
-import cloud.commandframework.captions.CaptionVariable;
 import cloud.commandframework.paper.PaperCommandManager;
+
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+
 import lombok.extern.log4j.Log4j2;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.format.NamedTextColor;
-import net.kyori.adventure.text.format.TextColor;
-import net.kyori.adventure.text.format.TextDecoration;
-import netscape.javascript.JSObject;
+import org.apache.commons.lang.StringUtils;
 import org.bukkit.Bukkit;
 import org.bukkit.NamespacedKey;
 import org.bukkit.World;
@@ -32,27 +30,36 @@ import org.bukkit.permissions.Permission;
 import org.bukkit.permissions.PermissionDefault;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.scheduler.BukkitTask;
+import org.bukkit.util.StringUtil;
+import org.checkerframework.checker.units.qual.N;
 import org.jetbrains.annotations.NotNull;
+
+import org.jetbrains.annotations.Nullable;
+import xyz.rgnt.crownedhelper.Constants;
 import xyz.rgnt.crownedhelper.Plugin;
 import xyz.rgnt.crownedhelper.abstraction.IControllable;
 import xyz.rgnt.crownedhelper.helpers.commandqueue.model.QueuedCommand;
 import xyz.rgnt.crownedhelper.statics.TimeStatics;
 
 import java.util.*;
-import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 @Log4j2(topic = "CommandQueue Manager")
 public class CommandQueueManager
-        implements IControllable, Listener {
+        implements CommandQueueAPI, IControllable, Listener {
+
+
+    public static final @NotNull NamespacedKey COMMAND_QUEUE_DATA_ID
+            = Objects.requireNonNull(NamespacedKey.fromString("crownedhelper:commandqueue_storage"));
+
+    public static final @NotNull NamespacedKey COMMAND_QUEUE_DEFAULT_BRANCH
+            = Objects.requireNonNull(NamespacedKey.fromString("crownedhelper:default_branch"));
 
     private final Plugin plugin;
     private BukkitTask tickingTask;
 
-    private final @NotNull NamespacedKey dataKey = Objects.requireNonNull(NamespacedKey.fromString("crownedhelper:commandqueue_storage"));
-
-    private final Map<UUID, List<Queue<QueuedCommand>>> queueBranches
+    private final Map<UUID, Map<NamespacedKey, LinkedList<QueuedCommand>>> branches
             = new HashMap<>();
 
     public CommandQueueManager(Plugin plugin) {
@@ -65,8 +72,8 @@ public class CommandQueueManager
 
         // ticking task
         tickingTask = Bukkit.getScheduler().runTaskTimerAsynchronously(plugin, () -> {
-            queueBranches.forEach((userUuid, userBranches) -> {
-                userBranches.forEach(userBranch -> {
+            branches.forEach((userUuid, userBranches) -> {
+                userBranches.forEach((branchId, userBranch) -> {
                     final var player = Bukkit.getPlayer(userUuid);
                     if (player == null || !player.isOnline())
                         return;
@@ -97,9 +104,10 @@ public class CommandQueueManager
                                 player.performCommand(command.getCommand());
                             else
                                 Bukkit.dispatchCommand(Bukkit.getConsoleSender(), command.getCommand());
-                            log.info("Executing {} command '{}' for '{}'",
+                            log.debug("Executing {} command '{}' on branch '{}' for '{}'",
                                     command.getExecutionSide().name().toLowerCase(),
                                     command.getCommand(),
+                                    branchId.asString(),
                                     player.getName());
                         });
                     }
@@ -114,22 +122,61 @@ public class CommandQueueManager
             tickingTask.cancel();
     }
 
+    @Override
+    public @NotNull LinkedList<QueuedCommand> createBranchQueue(@NotNull Player player,
+                                                           @NotNull NamespacedKey key) {
+        Map<NamespacedKey, LinkedList<QueuedCommand>> branch = this.branches.compute(
+                player.getUniqueId(), (uuid, originBranch) -> originBranch == null ? new HashMap<>() : originBranch
+        );
+        final LinkedList<QueuedCommand> branchQueue = new LinkedList<>();
+        branch.put(key, branchQueue);
+
+        return branchQueue;
+    }
+
+    @Override
+    public LinkedList<QueuedCommand> retrieveBranchQueue(@NotNull Player player,
+                                                    @NotNull NamespacedKey key) {
+        return this.branches.getOrDefault(player.getUniqueId(), new HashMap<>()).get(key);
+    }
+
+    @Override
+    public void enqueueCommand(@NotNull Player player,
+                               @NotNull QueuedCommand command,
+                               @Nullable NamespacedKey branchId) {
+        final var branch
+                = retrieveOrCreateBranchQueue(player, branchId == null ? COMMAND_QUEUE_DEFAULT_BRANCH : branchId);
+        if(branch.size() > 0){
+            // schedule execution after last entry
+            final var last = branch.getLast();
+            if (last != null)
+                command.setTimestamp(last.getScheduledExecution());
+        }
+        branch.add(command);
+    }
+
     @EventHandler
     public void handlePlayerQuit(PlayerQuitEvent event) {
         final var player = event.getPlayer();
-        final var data = this.queueBranches.remove(player.getUniqueId());
+        final var data = this.branches.remove(player.getUniqueId());
         if (data == null || data.size() == 0)
             return;
         final var cargo = player.getPersistentDataContainer();
-        final var json = new JsonArray();
-        data.forEach(branch -> {
-            final var branchJson = new JsonArray();
-            branch.forEach(command -> {
-                branchJson.add(new Gson().toJsonTree(command));
+        {
+            // serialize branches to json
+            final var json = new JsonObject();
+            data.forEach((branchId, branch) -> {
+                final var branchJson = new JsonArray();
+                branch.forEach(command ->
+                        branchJson.add(new Gson().toJsonTree(command))
+                );
+
+                json.add(branchId.asString(), branchJson);
             });
-            json.add(branchJson);
-        });
-        cargo.set(dataKey, PersistentDataType.STRING, new Gson().toJson(json));
+
+            // store json in player data
+            cargo.set(COMMAND_QUEUE_DATA_ID, PersistentDataType.STRING, new Gson().toJson(json));
+        }
         log.info("Stored data for {}", player.getName());
     }
 
@@ -138,84 +185,31 @@ public class CommandQueueManager
         final var player = event.getPlayer();
         final var cargo = player.getPersistentDataContainer();
 
-        String jsonRaw = cargo.get(dataKey, PersistentDataType.STRING);
+        final var jsonRaw
+                = cargo.get(COMMAND_QUEUE_DATA_ID, PersistentDataType.STRING);
         if (jsonRaw == null)
             return;
         try {
-            JsonArray json = new JsonParser().parse(jsonRaw).getAsJsonArray();
-            json.forEach(branchInferior -> {
-                JsonArray branchJson = branchInferior.getAsJsonArray();
-                final var branch = createNewQueueBranch(player);
-                branchJson.forEach(commandInferior -> {
-                    QueuedCommand command = new Gson().fromJson(commandInferior.getAsJsonObject(), QueuedCommand.class);
+            JsonObject json = new JsonParser()
+                    .parse(jsonRaw)
+                    .getAsJsonObject();
+
+            json.entrySet().forEach((jsonEntry) -> {
+                final var branchId = NamespacedKey.fromString(jsonEntry.getKey());
+                if(branchId == null)
+                    throw new IllegalStateException(String.format("Invalid branch name %s", jsonEntry.getKey()));
+                final var branch = createBranchQueue(player, branchId);
+                final var branchJson = jsonEntry.getValue().getAsJsonArray();
+                branchJson.forEach((entry) -> {
+                    final QueuedCommand command = new Gson().fromJson(entry, QueuedCommand.class);
                     branch.add(command);
                 });
             });
+
             log.info("Loaded data for {}", player.getName());
         } catch (Exception x) {
             log.error("Couldn't load data '{}' for player '{}'", jsonRaw, player.getName(), x);
         }
-    }
-
-    /**
-     * @param player Player
-     * @return Existing queue branch if possible, otherwise creates new queue branch.
-     */
-    public @NotNull Queue<QueuedCommand> createOrGetQueueBranch(final @NotNull Player player) {
-        var branch = getQueueBranch(player, -1);
-        if (branch == null)
-            branch = createNewQueueBranch(player);
-        return branch;
-    }
-
-    /**
-     * @param player Player
-     * @param index  Index of queue branch
-     * @return Nullable queue branch of specified player. If index is -1 returns first queue branch.
-     */
-    public Queue<QueuedCommand> getQueueBranch(final @NotNull Player player, final int index) {
-        final var branch = this.queueBranches.get(player.getUniqueId());
-        if (branch == null)
-            return null;
-        try {
-            if (index == -1)
-                return branch.get(0);
-            return branch.get(index);
-        } catch (NoSuchElementException x) {
-            return null;
-        }
-    }
-
-    /**
-     * @param player Player
-     * @return New queue branch of specified player.
-     */
-    public Queue<QueuedCommand> createNewQueueBranch(final @NotNull Player player) {
-        List<Queue<QueuedCommand>> branch = this.queueBranches.compute(
-                player.getUniqueId(), (uuid, originBranch) -> originBranch == null ? new ArrayList<>() : originBranch
-        );
-        final Queue<QueuedCommand> branchQueue = new ArrayDeque<>();
-        branch.add(branchQueue);
-
-        return branchQueue;
-    }
-
-    /**
-     * Enqueues command
-     *
-     * @param player    Player
-     * @param command   Command
-     * @param newBranch Whether this command should be on new queue branch
-     */
-    public void enqueueCommand(final @NotNull Player player,
-                               final @NotNull QueuedCommand command,
-                               boolean newBranch) {
-        final var branch = newBranch ? createNewQueueBranch(player) : createOrGetQueueBranch(player);
-        branch.add(command);
-    }
-
-    public void dequeueCommand(final @NotNull QueuedCommand command) {
-
     }
 
     @Override
@@ -234,32 +228,34 @@ public class CommandQueueManager
 
                     final var message = Component.text();
                     message.append(
-                            Component.text(String.format("Query of enqueued commands for player '%s'", target.getName())).color(NamedTextColor.GRAY)
+                            Component
+                                    .text(String.format("Query of enqueued commands for player '%s'", target.getName()))
+                                    .color(NamedTextColor.WHITE)
                     );
-                    final var branches = this.queueBranches.get(target.getUniqueId());
+                    final var branches = this.branches.get(target.getUniqueId());
                     if (branches == null
                             || branches.size() == 0) {
                         message.append(Component.text().color(NamedTextColor.RED).content("\n    None"));
                         sender.sendMessage(message);
                         return;
                     }
-                    int branchId = 0;
-                    for (Queue<QueuedCommand> branch : branches) {
-                        branchId++;
+
+                    branches.forEach((key, branch) ->{
                         message.append(Component.newline());
-                        message.append(Component.text("    #").color(NamedTextColor.DARK_GRAY));
-                        message.append(Component.text(branchId).color(NamedTextColor.WHITE));
-                        message.append(Component.text(" - ").color(NamedTextColor.DARK_GRAY));
+                        message.append(Component.text("    ").color(NamedTextColor.DARK_GRAY));
+                        message.append(Component.text(key.namespace()).color(NamedTextColor.DARK_GRAY));
+                        message.append(Component.text(":").color(NamedTextColor.DARK_GRAY));
+                        message.append(Component.text(key.value()).color(NamedTextColor.GRAY));
 
                         for (QueuedCommand queuedCommand : branch) {
-                            message.append(Component.text("'").color(NamedTextColor.GRAY));
-                            message.append(Component.text(String.format("%s", queuedCommand.getCommand()))
-                                    .hoverEvent(Component.text(queuedCommand.toString()))
+                            message.append(Component.text("\n        \u2192 ")
                                     .color(NamedTextColor.GREEN));
-                            message.append(Component.text("'").color(NamedTextColor.GRAY));
-                            message.append(Component.text(" \u2192 ").color(NamedTextColor.BLUE));
+                            message.append(Component.text(queuedCommand.getCommand())
+                                    .color(NamedTextColor.WHITE)
+                                    .hoverEvent(Component.text(queuedCommand.toString()))
+                                    .clickEvent(ClickEvent.suggestCommand("/" + queuedCommand.getCommand())));
                         }
-                    }
+                    });
                     sender.sendMessage(message);
                 }));
 
@@ -272,7 +268,8 @@ public class CommandQueueManager
                         .withDefaultDescription(ArgumentDescription.of("Delay for command execution in seconds")))
                 .flag(manager.flagBuilder("side").withAliases("s")
                         .withArgument(EnumArgument.optional(QueuedCommand.ExecSide.class, "side", QueuedCommand.ExecSide.CLIENT)))
-                .flag(manager.flagBuilder("new-branch").withAliases("b"))
+                .flag(manager.flagBuilder("branch").withAliases("b")
+                        .withArgument(StringArgument.of("branch")))
                 .flag(manager.flagBuilder("allowed-worlds")
                         .withArgument(StringArgument.newBuilder("allowed-worlds")
                                 .quoted()
@@ -290,8 +287,16 @@ public class CommandQueueManager
                     final Integer delay = ctx.get("delay");
 
                     // flags
-                    final boolean newBranch = ctx.flags().contains("new-branch");
-                    final QueuedCommand.ExecSide runAs
+                    final String execBranchString = ctx.flags().getValue("branch", null);
+                    final NamespacedKey execBranch;
+                    {
+                        if (execBranchString == null)
+                            execBranch = null;
+                        else
+                            execBranch = NamespacedKey.fromString(execBranchString, plugin);
+                    }
+
+                    final QueuedCommand.ExecSide execSide
                             = ctx.flags().getValue("side", QueuedCommand.ExecSide.CLIENT);
 
                     final var allowedWorldsString = ctx.flags().getValue("allowed-worlds", "");
@@ -303,8 +308,8 @@ public class CommandQueueManager
                             = blockedWorldsString.length() > 0 ? blockedWorldsString.split(",") : new String[0];
 
 
-                    final var qc = new QueuedCommand(TimeStatics.getCurrentUnix(), command, delay, runAs, allowedWorlds, blockedWorlds);
-                    enqueueCommand(target, qc, newBranch);
+                    final var qc = new QueuedCommand(TimeStatics.getCurrentUnix(), command, delay, execSide, allowedWorlds, blockedWorlds);
+                    enqueueCommand(target, qc, execBranch);
                     ctx.getSender().sendMessage(Component.empty()
                             .append(
                                     Component
