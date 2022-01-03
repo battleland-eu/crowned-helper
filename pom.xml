@@ -25,9 +25,26 @@
             <id>incendo@repo</id>
             <url>https://repo.incendo.org/content/repositories/snapshots</url>
         </repository>
+        <repository>
+            <id>nexus@ethernal</id>
+            <url>https://nexus.ethernal.cz/repository/maven/</url>
+        </repository>
     </repositories>
 
     <dependencies>
+
+        <dependency>
+            <groupId>xyz.rgnt</groupId>
+            <artifactId>mth</artifactId>
+            <version>1.5-release</version>
+        </dependency>
+        <dependency>
+            <groupId>xyz.rgnt</groupId>
+            <artifactId>mth</artifactId>
+            <version>1.5-release</version>
+            <classifier>javadoc</classifier>
+        </dependency>
+
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>

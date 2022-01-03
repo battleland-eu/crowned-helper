@@ -124,7 +124,7 @@ public class CommandQueueManager
 
     @Override
     public @NotNull LinkedList<QueuedCommand> createBranchQueue(@NotNull Player player,
-                                                           @NotNull NamespacedKey key) {
+                                                                @NotNull NamespacedKey key) {
         Map<NamespacedKey, LinkedList<QueuedCommand>> branch = this.branches.compute(
                 player.getUniqueId(), (uuid, originBranch) -> originBranch == null ? new HashMap<>() : originBranch
         );
@@ -136,7 +136,7 @@ public class CommandQueueManager
 
     @Override
     public LinkedList<QueuedCommand> retrieveBranchQueue(@NotNull Player player,
-                                                    @NotNull NamespacedKey key) {
+                                                         @NotNull NamespacedKey key) {
         return this.branches.getOrDefault(player.getUniqueId(), new HashMap<>()).get(key);
     }
 
@@ -146,7 +146,7 @@ public class CommandQueueManager
                                @Nullable NamespacedKey branchId) {
         final var branch
                 = retrieveOrCreateBranchQueue(player, branchId == null ? COMMAND_QUEUE_DEFAULT_BRANCH : branchId);
-        if(branch.size() > 0){
+        if (branch.size() > 0) {
             // schedule execution after last entry
             final var last = branch.getLast();
             if (last != null)
@@ -196,7 +196,7 @@ public class CommandQueueManager
 
             json.entrySet().forEach((jsonEntry) -> {
                 final var branchId = NamespacedKey.fromString(jsonEntry.getKey());
-                if(branchId == null)
+                if (branchId == null)
                     throw new IllegalStateException(String.format("Invalid branch name %s", jsonEntry.getKey()));
                 final var branch = createBranchQueue(player, branchId);
                 final var branchJson = jsonEntry.getValue().getAsJsonArray();
@@ -209,6 +209,7 @@ public class CommandQueueManager
             log.info("Loaded data for {}", player.getName());
         } catch (Exception x) {
             log.error("Couldn't load data '{}' for player '{}'", jsonRaw, player.getName(), x);
+            cargo.remove(COMMAND_QUEUE_DATA_ID);
         }
     }
 
@@ -240,7 +241,7 @@ public class CommandQueueManager
                         return;
                     }
 
-                    branches.forEach((key, branch) ->{
+                    branches.forEach((key, branch) -> {
                         message.append(Component.newline());
                         message.append(Component.text("    ").color(NamedTextColor.DARK_GRAY));
                         message.append(Component.text(key.namespace()).color(NamedTextColor.DARK_GRAY));
@@ -272,14 +273,16 @@ public class CommandQueueManager
                         .withArgument(StringArgument.of("branch")))
                 .flag(manager.flagBuilder("allowed-worlds")
                         .withArgument(StringArgument.newBuilder("allowed-worlds")
-                                .quoted()
-                                .withDefaultDescription(ArgumentDescription.of("Comma separated list of allowed worlds"))
-                                .withSuggestionsProvider((ctx, label) -> Bukkit.getWorlds().stream().map(World::getName).collect(Collectors.toList()))))
+                                        .quoted()
+                                        .withDefaultDescription(ArgumentDescription.of("Comma separated list of allowed worlds"))
+                                //  .withSuggestionsProvider((ctx, label) -> Bukkit.getWorlds().stream().map(World::getName).collect(Collectors.toList())))
+                        ))
                 .flag(manager.flagBuilder("blocked-worlds")
                         .withArgument(StringArgument.newBuilder("blocked-worlds")
-                                .quoted()
-                                .withDefaultDescription(ArgumentDescription.of("Comma separated list of blocked worlds"))
-                                .withSuggestionsProvider((ctx, label) -> Bukkit.getWorlds().stream().map(World::getName).collect(Collectors.toList()))))
+                                        .quoted()
+                                        .withDefaultDescription(ArgumentDescription.of("Comma separated list of blocked worlds"))
+                                // .withSuggestionsProvider((ctx, label) -> Bukkit.getWorlds().stream().map(World::getName).collect(Collectors.toList()))))
+                        ))
                 .handler(ctx -> {
                     final Player target = ctx.get("target");
                     // params

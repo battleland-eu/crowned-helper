@@ -3,6 +3,7 @@ package xyz.rgnt.crownedhelper;
 import cloud.commandframework.bukkit.CloudBukkitCapabilities;
 import cloud.commandframework.execution.AsynchronousCommandExecutionCoordinator;
 import cloud.commandframework.paper.PaperCommandManager;
+import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.extern.log4j.Log4j2;
 import org.bukkit.Bukkit;
@@ -10,6 +11,8 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.permissions.Permission;
 import org.bukkit.permissions.PermissionDefault;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.checkerframework.checker.units.qual.A;
+import xyz.rgnt.crownedhelper.helpers.adminhelper.AdminHelper;
 import xyz.rgnt.crownedhelper.helpers.commandqueue.CommandQueueManager;
 
 import java.util.function.Function;
@@ -24,14 +27,17 @@ public final class Plugin
         instance = this;
     }
 
+
     @Getter
     private PaperCommandManager<CommandSender> commandManager;
 
+    private AdminHelper adminHelper;
     private CommandQueueManager commandQueue;
 
     @Override
     public void onLoad() {
         this.commandQueue = new CommandQueueManager(this);
+        this.adminHelper  = new AdminHelper();
     }
 
     @Override
@@ -61,10 +67,14 @@ public final class Plugin
 
         this.commandQueue.initialize();
         this.commandQueue.registerCommands(this.commandManager);
+
+        this.adminHelper.initialize();
+        this.adminHelper.registerCommands(this.commandManager);
     }
 
     @Override
     public void onDisable() {
+        this.adminHelper.terminate();
         this.commandQueue.terminate();
     }
 }
