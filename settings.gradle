@@ -1,0 +1,16 @@
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        maven {
+            url("https://papermc.io/repo/repository/maven-public/")
+        }
+        maven {
+            url "https://plugins.gradle.org/m2/"
+        }
+    }
+}
+
+rootProject.name = 'crownedhelper'
+
+
+

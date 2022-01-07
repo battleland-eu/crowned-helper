@@ -61,8 +61,6 @@ public final class Plugin
 
             final var builder = commandManager.commandBuilder("crownedhelper", "ch")
                     .permission(commandPermission.getName());
-
-
         }
 
         this.commandQueue.initialize();

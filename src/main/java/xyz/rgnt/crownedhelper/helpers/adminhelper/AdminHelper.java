@@ -7,25 +7,14 @@ import cloud.commandframework.bukkit.arguments.selector.SingleEntitySelector;
 import cloud.commandframework.bukkit.parsers.PlayerArgument;
 import cloud.commandframework.bukkit.parsers.selector.SingleEntitySelectorArgument;
 import cloud.commandframework.paper.PaperCommandManager;
-import com.destroystokyo.paper.profile.CraftPlayerProfile;
-import com.destroystokyo.paper.profile.PlayerProfile;
-import com.mojang.authlib.GameProfile;
-import io.netty.util.concurrent.Future;
-import io.netty.util.concurrent.GenericFutureListener;
+
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
-import net.minecraft.core.BlockPosition;
-import net.minecraft.network.NetworkManager;
-import net.minecraft.network.PacketListener;
-import net.minecraft.network.protocol.EnumProtocolDirection;
-import net.minecraft.network.protocol.Packet;
-import net.minecraft.server.level.EntityPlayer;
-import net.minecraft.world.level.World;
+
 import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
 import org.bukkit.command.CommandSender;
-import org.bukkit.craftbukkit.v1_17_R1.CraftServer;
-import org.bukkit.craftbukkit.v1_17_R1.entity.CraftPlayer;
+import org.bukkit.craftbukkit.v1_18_R1.entity.CraftPlayer;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Mob;
 import org.bukkit.entity.Player;
@@ -37,11 +26,9 @@ import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.permissions.Permission;
 import org.bukkit.permissions.PermissionDefault;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 import xyz.rgnt.crownedhelper.Plugin;
 import xyz.rgnt.crownedhelper.abstraction.IControllable;
-import xyz.rgnt.crownedhelper.natives.level.DummyEntityPlayer;
-import xyz.rgnt.crownedhelper.natives.network.DummyNetworkManager;
+
 import xyz.rgnt.crownedhelper.natives.network.OverridenPlayerConnection;
 
 import java.util.UUID;
@@ -63,7 +50,7 @@ public class AdminHelper
     @EventHandler
     public void handlePlayerJoin(PlayerJoinEvent event) {
         final var player = ((CraftPlayer)  event.getPlayer()).getHandle();
-        player.b = new OverridenPlayerConnection(player.b);
+        player.connection = new OverridenPlayerConnection(player.connection);
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -120,7 +107,7 @@ public class AdminHelper
                     .permission("crownedhelper.command.overridecontrols")
                     .handler((ctx) -> {
                         final var player = ((CraftPlayer) ctx.getSender()).getHandle();
-                        if(!(player.b instanceof OverridenPlayerConnection connection))
+                        if(!(player.connection instanceof OverridenPlayerConnection connection))
                             return;
                         if(connection.isOverrideControls()) {
                             connection.setOverrideControls(false);
@@ -133,42 +120,6 @@ public class AdminHelper
             manager.command(builder);
         }
 
-
-        // kamaratcommand
-        {
-            Bukkit.getPluginManager().addPermission(new Permission("crownedhelper.command.kamarat", PermissionDefault.OP));
-            final var builder = manager.commandBuilder("kamarat")
-                    .permission("crownedhelper.command.ride")
-                    .argument(StringArgument.of("name"))
-                    .flag(manager.flagBuilder("uuid").withArgument(UUIDArgument.of("uuid")))
-                    .handler((ctx) -> {
-                        try {
-                            final var senderPlayer = (Player) ctx.getSender();
-                            final var senderNative = ((CraftPlayer) ctx.getSender()).getHandle().getWorldServer();
-                            final var flags = ctx.flags();
-                            final var server = (((CraftServer) Bukkit.getServer()).getServer());
-
-                            final var profile = new CraftPlayerProfile(flags.hasFlag("uuid") ?
-                                    flags.<UUID>get("uuid") :
-                                    EntityPlayer.getOfflineUUID(ctx.get("name")), ctx.get("name"));
-
-                            final var nativePlayer
-                                    = DummyEntityPlayer.make(profile);
-
-                            server.getPlayerList().j.add(nativePlayer);
-                            server.getPlayerList().a(new DummyNetworkManager(EnumProtocolDirection.a), nativePlayer);
-                            nativePlayer.spawnIn(senderNative.getLevel());
-                            senderPlayer.teleport(nativePlayer.getBukkitEntity());
-
-
-                        } catch (Exception x) {
-                            ctx.getSender().sendMessage(Component.text("Nepodarilo sa: " + x).color(NamedTextColor.RED));
-                            x.printStackTrace();
-                        }
-
-                    });
-            manager.command(builder);
-        }
 
     }
 }

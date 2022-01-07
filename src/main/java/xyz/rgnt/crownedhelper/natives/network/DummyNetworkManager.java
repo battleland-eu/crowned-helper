@@ -1,14 +1,13 @@
 package xyz.rgnt.crownedhelper.natives.network;
 
-import net.minecraft.network.NetworkManager;
-import net.minecraft.network.protocol.EnumProtocolDirection;
+import net.minecraft.network.Connection;
+import net.minecraft.network.protocol.PacketFlow;
+
 
 public class DummyNetworkManager
-    extends NetworkManager {
+    extends Connection {
 
-    public DummyNetworkManager(EnumProtocolDirection side) {
+    public DummyNetworkManager(PacketFlow side) {
         super(side);
     }
-
-
 }

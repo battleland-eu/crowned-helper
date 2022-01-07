@@ -1,15 +1,12 @@
 package xyz.rgnt.crownedhelper.api;
 
 import io.netty.buffer.Unpooled;
-import net.kyori.adventure.text.format.TextColor;
-import net.minecraft.core.BlockPosition;
-import net.minecraft.network.PacketDataSerializer;
-import net.minecraft.network.protocol.game.PacketPlayOutCustomPayload;
-import net.minecraft.resources.MinecraftKey;
-import net.minecraft.server.level.EntityPlayer;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.protocol.game.ClientboundCustomPayloadPacket;
+import net.minecraft.server.level.ServerPlayer;
 import org.bukkit.Location;
-import org.bukkit.craftbukkit.v1_17_R1.entity.CraftPlayer;
-import org.bukkit.craftbukkit.v1_17_R1.util.CraftVector;
+import org.bukkit.craftbukkit.v1_18_R1.entity.CraftPlayer;
 import org.bukkit.entity.Player;
 
 import javax.annotation.Nullable;
@@ -22,18 +19,18 @@ public class MarkerAPI {
                                   int lifetimeTicks,
                                   final int color) {
 
-        final EntityPlayer nativePlayer = ((CraftPlayer) player).getHandle();
+        final ServerPlayer nativePlayer = ((CraftPlayer) player).getHandle();
 
-        final PacketDataSerializer packetData =
-                new PacketDataSerializer(Unpooled.buffer());
-        packetData.a(new BlockPosition(location.getBlockX(), location.getBlockY(), location.getBlockZ()))
+        final FriendlyByteBuf packetData =
+                new FriendlyByteBuf(Unpooled.buffer());
+        packetData.writeBlockPos(new BlockPos(location.getBlockX(), location.getBlockY(), location.getBlockZ()))
                 .writeInt(color);
-        packetData.a(name == null ? "" : name);
+        packetData.writeUtf(name == null ? "" : name);
         packetData.writeInt(lifetimeTicks);
 
 
-        final var packet = new PacketPlayOutCustomPayload(PacketPlayOutCustomPayload.n, packetData);
-        nativePlayer.b.sendPacket(packet);
+        final var packet = new ClientboundCustomPayloadPacket(ClientboundCustomPayloadPacket.DEBUG_GAME_TEST_ADD_MARKER, packetData);
+        nativePlayer.connection.send(packet);
 
     }
 }
