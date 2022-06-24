@@ -16,39 +16,37 @@ import lombok.extern.log4j.Log4j2;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.format.NamedTextColor;
-import org.apache.commons.lang.StringUtils;
 import org.bukkit.Bukkit;
 import org.bukkit.NamespacedKey;
-import org.bukkit.World;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerInteractAtEntityEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.permissions.Permission;
 import org.bukkit.permissions.PermissionDefault;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.scheduler.BukkitTask;
-import org.bukkit.util.StringUtil;
-import org.checkerframework.checker.units.qual.N;
 import org.jetbrains.annotations.NotNull;
 
 import org.jetbrains.annotations.Nullable;
-import xyz.rgnt.crownedhelper.Constants;
 import xyz.rgnt.crownedhelper.Plugin;
 import xyz.rgnt.crownedhelper.abstraction.IControllable;
 import xyz.rgnt.crownedhelper.helpers.commandqueue.model.QueuedCommand;
+import xyz.rgnt.crownedhelper.helpers.commandqueue.model.QueuedEvent;
 import xyz.rgnt.crownedhelper.statics.TimeStatics;
 
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 @Log4j2(topic = "CommandQueue Manager")
 public class CommandQueueManager
         implements CommandQueueAPI, IControllable, Listener {
-
 
     public static final @NotNull NamespacedKey COMMAND_QUEUE_DATA_ID
             = Objects.requireNonNull(NamespacedKey.fromString("crownedhelper:commandqueue_storage"));
@@ -59,7 +57,10 @@ public class CommandQueueManager
     private final Plugin plugin;
     private BukkitTask tickingTask;
 
-    private final Map<UUID, Map<NamespacedKey, LinkedList<QueuedCommand>>> branches
+    private final Map<UUID, Map<NamespacedKey, LinkedList<QueuedCommand>>> commands
+            = new HashMap<>();
+
+    private final Map<QueuedEvent.ExecCondition, LinkedList<QueuedEvent>> events
             = new HashMap<>();
 
     public CommandQueueManager(Plugin plugin) {
@@ -70,47 +71,47 @@ public class CommandQueueManager
     public void initialize() {
         Bukkit.getPluginManager().registerEvents(this, plugin);
 
+        {
+            final var eventsConfig =
+                    JsonParser.parseReader(
+                                    new InputStreamReader(plugin.getResource("resources/commandqueue/handlers.json"), StandardCharsets.UTF_8)
+                            )
+                            .getAsJsonObject();
+
+            eventsConfig.entrySet().forEach(entry -> {
+                JsonObject json = entry.getValue().getAsJsonObject();
+                final var event = new QueuedEvent(json);
+                this.events.compute(event.getCondition(), (cond, handlers) -> {
+                    if (handlers == null)
+                        handlers = new LinkedList<>();
+                    handlers.add(event);
+
+                    return handlers;
+                });
+            });
+        }
+
         // ticking task
         tickingTask = Bukkit.getScheduler().runTaskTimerAsynchronously(plugin, () -> {
-            branches.forEach((userUuid, userBranches) -> {
+            commands.forEach((userUuid, userBranches) -> {
                 userBranches.forEach((branchId, userBranch) -> {
                     final var player = Bukkit.getPlayer(userUuid);
                     if (player == null || !player.isOnline())
                         return;
-
                     var command = userBranch.peek();
                     if (command == null)
                         return;
 
-                    if (TimeStatics.deltaIsLargerThan(command.getTimestamp(),
-                            command.getExecutionDelay())) {
-
-                        // cancel if world is blocked
-                        if (command.getBlockedWorlds().length > 0)
-                            if (Stream.of(command.getBlockedWorlds())
-                                    .anyMatch((world) -> player.getWorld().getName().equals(world)))
-                                return;
-                        // cancel if world isnt allowed
-                        if (command.getAllowedWorlds().length > 0)
-                            if (Stream.of(command.getAllowedWorlds())
-                                    .noneMatch((world) -> player.getWorld().getName().equals(world)))
-                                return;
-
+                    command.executeAs(plugin, player, (cmd) -> cmd, (cmd) -> {
                         userBranch.poll();
+                        log.info("Executing {} command '{}' on branch '{}' for '{}'",
+                                command.getExecutionSide().name().toLowerCase(),
+                                cmd,
+                                branchId.asString(),
+                                player.getName());
+                    }, () -> {
+                    });
 
-                        // execute command
-                        Bukkit.getScheduler().runTask(plugin, () -> {
-                            if (command.getExecutionSide().equals(QueuedCommand.ExecSide.CLIENT))
-                                player.performCommand(command.getCommand());
-                            else
-                                Bukkit.dispatchCommand(Bukkit.getConsoleSender(), command.getCommand());
-                            log.debug("Executing {} command '{}' on branch '{}' for '{}'",
-                                    command.getExecutionSide().name().toLowerCase(),
-                                    command.getCommand(),
-                                    branchId.asString(),
-                                    player.getName());
-                        });
-                    }
                 });
             });
         }, 0, 1);
@@ -125,7 +126,7 @@ public class CommandQueueManager
     @Override
     public @NotNull LinkedList<QueuedCommand> createBranchQueue(@NotNull Player player,
                                                                 @NotNull NamespacedKey key) {
-        Map<NamespacedKey, LinkedList<QueuedCommand>> branch = this.branches.compute(
+        Map<NamespacedKey, LinkedList<QueuedCommand>> branch = this.commands.compute(
                 player.getUniqueId(), (uuid, originBranch) -> originBranch == null ? new HashMap<>() : originBranch
         );
         final LinkedList<QueuedCommand> branchQueue = new LinkedList<>();
@@ -137,7 +138,7 @@ public class CommandQueueManager
     @Override
     public LinkedList<QueuedCommand> retrieveBranchQueue(@NotNull Player player,
                                                          @NotNull NamespacedKey key) {
-        return this.branches.getOrDefault(player.getUniqueId(), new HashMap<>()).get(key);
+        return this.commands.getOrDefault(player.getUniqueId(), new HashMap<>()).get(key);
     }
 
     @Override
@@ -156,10 +157,36 @@ public class CommandQueueManager
     }
 
     @EventHandler
+    public void handlePlayerClickPlayer(final PlayerInteractAtEntityEvent e) {
+        if (!(e.getRightClicked() instanceof Player target))
+            return;
+        if (!e.getHand().equals(EquipmentSlot.HAND))
+            return;
+        if(!target.isOnline())
+            return;
+
+        this.events.get(QueuedEvent.ExecCondition.PLAYER_CLICK_PLAYER).forEach(event -> {
+            event.getCommand().executeAs(plugin, e.getPlayer(), (cmd) -> {
+                return cmd.replace("{target}", target.getName());
+            }, (command) -> {
+                log.debug("Executing {} command event '{}' for '{}' targeting '{}'",
+                        event.getCommand().getExecutionSide().name().toLowerCase(),
+                        command,
+                        e.getPlayer().getName(),
+                        target.getName()
+                );
+            }, () -> {
+            });
+        });
+    }
+
+    @EventHandler
     public void handlePlayerQuit(PlayerQuitEvent event) {
         final var player = event.getPlayer();
-        final var data = this.branches.remove(player.getUniqueId());
-        if (data == null || data.size() == 0)
+        final var data = this.commands.remove(player.getUniqueId());
+        if (data == null
+                || data.size() == 0
+                || data.values().stream().noneMatch(branch -> branch.size() > 0))
             return;
         final var cargo = player.getPersistentDataContainer();
         {
@@ -207,6 +234,7 @@ public class CommandQueueManager
             });
 
             log.info("Loaded data for {}", player.getName());
+            cargo.remove(COMMAND_QUEUE_DATA_ID);
         } catch (Exception x) {
             log.error("Couldn't load data '{}' for player '{}'", jsonRaw, player.getName(), x);
             cargo.remove(COMMAND_QUEUE_DATA_ID);
@@ -216,7 +244,8 @@ public class CommandQueueManager
     @Override
     public void registerCommands(@NotNull PaperCommandManager<CommandSender> manager) {
         Permission commandPermission = new Permission("crownedhelper.command.commandqueue", PermissionDefault.OP);
-        Bukkit.getPluginManager().addPermission(commandPermission);
+        if (Bukkit.getPluginManager().getPermission(commandPermission.getName()) == null)
+            Bukkit.getPluginManager().addPermission(commandPermission);
 
         final var builder = manager.commandBuilder("commandqueue", "cq")
                 .permission(commandPermission.getName());
@@ -233,7 +262,7 @@ public class CommandQueueManager
                                     .text(String.format("Query of enqueued commands for player '%s'", target.getName()))
                                     .color(NamedTextColor.WHITE)
                     );
-                    final var branches = this.branches.get(target.getUniqueId());
+                    final var branches = this.commands.get(target.getUniqueId());
                     if (branches == null
                             || branches.size() == 0) {
                         message.append(Component.text().color(NamedTextColor.RED).content("\n    None"));

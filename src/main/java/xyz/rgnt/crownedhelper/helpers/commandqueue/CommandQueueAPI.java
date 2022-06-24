@@ -12,8 +12,6 @@ import java.util.Queue;
 
 public interface CommandQueueAPI {
 
-
-
     /**
      * Creates new branch queue with identifier.
      * @param player Player to whom the branch belongs to.

@@ -1,0 +1,10 @@
+{
+  "custom_handler": {
+    "condition": "PLAYER_CLICK_PLAYER",
+    "command": {
+      "command": "duel {target}",
+      "side": "client",
+      "allowed_worlds": "PvPArena,Spawn"
+    }
+  }
+}

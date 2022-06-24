@@ -1,11 +1,15 @@
 package xyz.rgnt.crownedhelper.helpers.adminhelper;
 
+import cloud.commandframework.Command;
 import cloud.commandframework.arguments.standard.BooleanArgument;
+import cloud.commandframework.arguments.standard.IntegerArgument;
 import cloud.commandframework.arguments.standard.StringArgument;
 import cloud.commandframework.arguments.standard.UUIDArgument;
 import cloud.commandframework.bukkit.arguments.selector.SingleEntitySelector;
 import cloud.commandframework.bukkit.parsers.PlayerArgument;
 import cloud.commandframework.bukkit.parsers.selector.SingleEntitySelectorArgument;
+import cloud.commandframework.context.CommandContext;
+import cloud.commandframework.execution.CommandExecutionHandler;
 import cloud.commandframework.paper.PaperCommandManager;
 
 import net.kyori.adventure.text.Component;
@@ -25,6 +29,7 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.permissions.Permission;
 import org.bukkit.permissions.PermissionDefault;
+import org.checkerframework.checker.nullness.qual.NonNull;
 import org.jetbrains.annotations.NotNull;
 import xyz.rgnt.crownedhelper.Plugin;
 import xyz.rgnt.crownedhelper.abstraction.IControllable;
@@ -50,7 +55,7 @@ public class AdminHelper
     @EventHandler
     public void handlePlayerJoin(PlayerJoinEvent event) {
         final var player = ((CraftPlayer)  event.getPlayer()).getHandle();
-        player.connection = new OverridenPlayerConnection(player.connection);
+      //  player.connection = new OverridenPlayerConnection(player.connection);
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -62,7 +67,10 @@ public class AdminHelper
     public void registerCommands(@NotNull PaperCommandManager<CommandSender> manager) {
         // ride command
         {
-            Bukkit.getPluginManager().addPermission(new Permission("crownedhelper.command.ride", PermissionDefault.OP));
+            final var commandPermission = new Permission("crownedhelper.command.ride", PermissionDefault.OP);
+            if(Bukkit.getPluginManager().getPermission(commandPermission.getName()) == null)
+                Bukkit.getPluginManager().addPermission(commandPermission);
+
             final var builder = manager.commandBuilder("mount")
                     .permission("crownedhelper.command.ride")
                     .argument(SingleEntitySelectorArgument.optional("target"))
@@ -70,7 +78,7 @@ public class AdminHelper
                     .flag(manager.flagBuilder("toggle").withAliases("t"))
                     .handler((ctx) -> {
                         final var sender = (Player) ctx.getSender();
-                        if(sender.getVehicle() != null
+                        if (sender.getVehicle() != null
                                 && ctx.flags().hasFlag("toggle")) {
                             sender.getVehicle().eject();
                             sender.sendMessage(Component.text("Unmonted.").color(NamedTextColor.GREEN));
@@ -80,18 +88,18 @@ public class AdminHelper
                         final var targetOpt = ctx.<SingleEntitySelector>getOptional("target");
 
                         Entity target = null;
-                        if(targetOpt.isPresent())
+                        if (targetOpt.isPresent())
                             target = targetOpt.get().getEntity();
-                        if(sender.getGameMode()
+                        if (sender.getGameMode()
                                 .equals(GameMode.SPECTATOR))
                             target = sender.getSpectatorTarget();
-                        if(target == null)
+                        if (target == null)
                             target = sender.getTargetEntity(12);
-                        if(target == null) {
+                        if (target == null) {
                             sender.sendMessage(Component.text("Invalid entity").color(NamedTextColor.RED));
                             return;
                         }
-                        if(ctx.flags().hasFlag("no-ai") && target instanceof Mob mob)
+                        if (ctx.flags().hasFlag("no-ai") && target instanceof Mob mob)
                             Bukkit.getMobGoals()
                                     .removeAllGoals(mob);
                         target.addPassenger(sender);
@@ -102,14 +110,17 @@ public class AdminHelper
 
         // overridecontrols command
         {
-            Bukkit.getPluginManager().addPermission(new Permission("crownedhelper.command.overridecontrols", PermissionDefault.OP));
+            final var commandPermission = new Permission("crownedhelper.command.overridecontrols", PermissionDefault.OP);
+            if(Bukkit.getPluginManager().getPermission(commandPermission.getName()) == null)
+                Bukkit.getPluginManager().addPermission(commandPermission);
+
             final var builder = manager.commandBuilder("overridecontrols")
                     .permission("crownedhelper.command.overridecontrols")
                     .handler((ctx) -> {
                         final var player = ((CraftPlayer) ctx.getSender()).getHandle();
-                        if(!(player.connection instanceof OverridenPlayerConnection connection))
+                        if (!(player.connection instanceof OverridenPlayerConnection connection))
                             return;
-                        if(connection.isOverrideControls()) {
+                        if (connection.isOverrideControls()) {
                             connection.setOverrideControls(false);
                             ctx.getSender().sendMessage(Component.text("Controls reverted to original handler").color(NamedTextColor.GREEN));
                         } else {
@@ -120,6 +131,17 @@ public class AdminHelper
             manager.command(builder);
         }
 
+        // custom command
+        {
+            manager.commandBuilder("custom")
+                    .argument(PlayerArgument.of("player"))
+                    .argument(IntegerArgument.of("integer"))
+                    .handler(new CommandExecutionHandler<CommandSender>() {
+                        @Override
+                        public void execute(@NonNull CommandContext<CommandSender> ctx) {
 
+                        }
+                    });
+        }
     }
 }

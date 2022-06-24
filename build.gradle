@@ -17,9 +17,9 @@ description ''
 
 repositories {
     mavenLocal()
-    maven {
-        url "https://nexus.ethernal.cz/repository/maven/"
-    }
+    maven{
+        url "https://repo.incendo.org/content/repositories/snapshots"
+    } // For snapshot builds
 }
 
 
