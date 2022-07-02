@@ -37,7 +37,9 @@ dependencies {
 shadowJar {
     relocate 'cloud.commandframework', "xyz.rgnt.crownedhelper.lib.cloud.commandframework"
     exclude("org.jetbrains")
+    archiveFileName = "crownedhelper.jar"
 }
+tasks.named("build") { dependsOn(tasks.named("shadowJar")) }
 
 tasks {
     assemble {
