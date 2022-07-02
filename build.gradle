@@ -12,23 +12,23 @@ version '1.0-dev'
 
 repositories {
     maven {
-        url("https://nexus.battleland.eu/repository/central/")
+        url = "https://nexus.battleland.eu/repository/central"
     }
     maven {
-        url("https://repo.incendo.org/content/repositories/snapshots")
+        url = "https://repo.incendo.org/content/repositories/snapshots"
     }
 }
 
 
 dependencies {
-    implementation("xyz.rgnt:mth:1.6-release")
+    implementation("xyz.rgnt:mth:1.6-release@jar")
     implementation("cloud.commandframework:cloud-paper:1.6.1")
-    implementation("cloud.commandframework:cloud-minecraft-extras:1.6.1")
 
     paperweightDevelopmentBundle("io.papermc.paper:dev-bundle:1.18.1-R0.1-SNAPSHOT")
 }
 
 shadowJar {
+    relocate 'io.leangen', "xyz.rgnt.crownedhelper.lib.io.leangen"
     relocate 'cloud.commandframework', "xyz.rgnt.crownedhelper.lib.cloud.commandframework"
     archiveFileName = "crownedhelper.jar"
 }
